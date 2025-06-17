@@ -4,9 +4,20 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from oauth2client.service_account import ServiceAccountCredentials
 import json
+import subprocess
+import datetime
+import os
 
 # --- Page setup ---
 st.set_page_config(page_title="Mouse Foraging Viewer", layout="wide")
+
+# --- Get Git commit hash ---
+def get_git_commit():
+    try:
+        commit = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"]).decode("utf-8").strip()
+        return commit
+    except Exception:
+        return "Unknown"
 
 # --- Load credentials ---
 @st.cache_resource
@@ -16,8 +27,8 @@ def get_credentials():
     scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
     return ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
 
-# --- Load and preprocess data (with cache) ---
-@st.cache_data
+# --- Load and preprocess data (cached) ---
+@st.cache_data(ttl=600)  # Auto-refresh every 10 minutes
 def load_data():
     creds = get_credentials()
     client = gspread.authorize(creds)
@@ -41,17 +52,21 @@ def load_data():
 
     return df
 
-# --- Refresh button ---
-col1, col2 = st.columns([1, 5])
+# --- Refresh + Metadata UI ---
+col1, col2, col3 = st.columns([1.2, 5, 3])
 with col1:
     if st.button("🔄 Refresh Data"):
         load_data.clear()
         st.experimental_rerun()
 
+with col3:
+    st.markdown(f"**🕒 Last Updated:** `{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`")
+    st.markdown(f"**🧬 Git Commit:** `{get_git_commit()}`")
+
 # --- Load data ---
 df = load_data()
 
-# --- UI: Mouse selector ---
+# --- Title + mouse selector ---
 st.title("🐭 Mouse Foraging Over Time")
 all_mice = sorted(df['Mouse ID'].unique())
 selected_mice = st.multiselect("Select mice to display", all_mice, default=all_mice)
