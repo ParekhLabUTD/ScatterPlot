@@ -3,10 +3,13 @@ import gspread
 import pandas as pd
 import matplotlib.pyplot as plt
 from oauth2client.service_account import ServiceAccountCredentials
+import json
 
 # ---- Google Sheets API setup ----
 scope = ["https://spreadsheets.google.com/feeds", "https://www.googleapis.com/auth/drive"]
-creds = ServiceAccountCredentials.from_json_keyfile_name("scatterplot-463119-ee06f55f792f.json", scope)
+gcp_json = st.secrets["gcp_service_account"]
+creds_dict = json.loads(gcp_json)
+creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
 client = gspread.authorize(creds)
 
 sheet_url = "https://docs.google.com/spreadsheets/d/1U6OTPPOpwrBcE9CHDjfGcAu3SuvdViijPTYwZ0Zg74c"
