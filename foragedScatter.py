@@ -41,16 +41,24 @@ selected_mice = st.multiselect("Select mice to display", all_mice, default=all_m
 if selected_mice:
     fig, ax = plt.subplots(figsize=(10, 5))
     colors = plt.cm.get_cmap('tab10', len(all_mice))
+
     for i, mouse in enumerate(all_mice):
         if mouse in selected_mice:
             sub_df = df[df['Mouse ID'] == mouse]
             ax.plot(sub_df['Date'], sub_df['Total Foraged'], marker='o', linestyle='-', label=mouse, color=colors(i))
+
     ax.set_title("Foraging by Mouse")
     ax.set_xlabel("Date")
     ax.set_ylabel("Total Foraged (g)")
     ax.tick_params(axis='x', rotation=45)
-    ax.legend(title="Mouse ID")
     ax.grid(True)
+
+# 🔄 Move legend outside plot
+    ax.legend(title="Mouse ID", bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0)
+
+    fig.tight_layout()  # Helps with spacing
+
     st.pyplot(fig)
+
 else:
     st.warning("Please select at least one mouse.")
