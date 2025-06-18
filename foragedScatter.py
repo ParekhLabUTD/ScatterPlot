@@ -6,18 +6,23 @@ from oauth2client.service_account import ServiceAccountCredentials
 import json
 import subprocess
 import datetime
-import os
 
 # --- Page setup ---
 st.set_page_config(page_title="Mouse Foraging Viewer", layout="wide")
 
+# --- Initialize session state ---
+if "selected_mice" not in st.session_state:
+    st.session_state.selected_mice = []
+if "plot_requested" not in st.session_state:
+    st.session_state.plot_requested = False
+
 # --- Get Git commit hash ---
 def get_git_commit():
     try:
-        commit = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"]).decode("utf-8").strip()
+        commit = subprocess.check_output(["git", "rev-parse", "--short", "HEAD"], stderr=subprocess.DEVNULL).decode("utf-8").strip()
         return commit
     except Exception:
-        return "Unknown"
+        return "Unavailable"
 
 # --- Load credentials ---
 @st.cache_resource
@@ -30,6 +35,7 @@ def get_credentials():
 # --- Load and preprocess data (cached) ---
 @st.cache_data(ttl=600)  # Auto-refresh every 10 minutes
 def load_data():
+    load_data.timestamp = datetime.datetime.now()
     creds = get_credentials()
     client = gspread.authorize(creds)
     sheet_url = "https://docs.google.com/spreadsheets/d/1U6OTPPOpwrBcE9CHDjfGcAu3SuvdViijPTYwZ0Zg74c"
@@ -57,39 +63,52 @@ col1, col2, col3 = st.columns([1.2, 5, 3])
 with col1:
     if st.button("🔄 Refresh Data"):
         load_data.clear()
+        st.session_state.plot_requested = False
         st.experimental_rerun()
 
 with col3:
-    st.markdown(f"**🕒 Last Updated:** `{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}`")
+    last_updated = getattr(load_data, 'timestamp', None)
+    if last_updated:
+        st.markdown(f"**🕒 Last Updated:** `{last_updated.strftime('%Y-%m-%d %H:%M:%S')}`")
+    else:
+        st.markdown("**🕒 Last Updated:** `Unknown`")
     st.markdown(f"**🧬 Git Commit:** `{get_git_commit()}`")
 
 # --- Load data ---
 df = load_data()
 
-# --- Title + mouse selector ---
-st.title("🐭 Mouse Foraging Over Time")
-all_mice = sorted(df['Mouse ID'].unique())
-selected_mice = st.multiselect("Select mice to display", all_mice, default=all_mice)
+# --- UI: Mouse selector and plot trigger ---
+with st.form("mouse_selection_form"):
+    st.title("🐭 Mouse Foraging Over Time")
+    all_mice = sorted(df['Mouse ID'].unique())
+    selected = st.multiselect("Select mice to display", all_mice, default=st.session_state.selected_mice)
+    plot_btn = st.form_submit_button("📊 Plot Graph")
 
-# --- Plot ---
-if selected_mice:
-    fig, ax = plt.subplots(figsize=(10, 5))
-    color_map = plt.cm.get_cmap('tab10', len(all_mice))
+    if plot_btn:
+        st.session_state.selected_mice = selected
+        st.session_state.plot_requested = True
 
-    for i, mouse in enumerate(all_mice):
-        if mouse in selected_mice:
-            sub_df = df[df['Mouse ID'] == mouse]
-            ax.plot(sub_df['Date'], sub_df['Total Foraged'],
-                    marker='o', linestyle='-', label=mouse, color=color_map(i))
+# --- Plotting ---
+if st.session_state.plot_requested:
+    selected_mice = st.session_state.selected_mice
+    if selected_mice:
+        fig, ax = plt.subplots(figsize=(10, 5))
+        color_map = plt.cm.get_cmap('tab10', len(all_mice))
 
-    ax.set_title("Foraging by Mouse")
-    ax.set_xlabel("Date")
-    ax.set_ylabel("Total Foraged (g)")
-    ax.tick_params(axis='x', rotation=45)
-    ax.grid(True)
-    ax.legend(title="Mouse ID", bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0)
+        for i, mouse in enumerate(all_mice):
+            if mouse in selected_mice:
+                sub_df = df[df['Mouse ID'] == mouse]
+                ax.plot(sub_df['Date'], sub_df['Total Foraged'],
+                        marker='o', linestyle='-', label=mouse, color=color_map(i))
 
-    fig.tight_layout()
-    st.pyplot(fig)
-else:
-    st.warning("Please select at least one mouse to view data.")
+        ax.set_title("Foraging by Mouse")
+        ax.set_xlabel("Date")
+        ax.set_ylabel("Total Foraged (g)")
+        ax.tick_params(axis='x', rotation=45)
+        ax.grid(True)
+        ax.legend(title="Mouse ID", bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0)
+
+        fig.tight_layout()
+        st.pyplot(fig)
+    else:
+        st.warning("Please select at least one mouse to view data.")
