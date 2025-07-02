@@ -15,6 +15,8 @@ if "selected_mice" not in st.session_state:
     st.session_state.selected_mice = []
 if "plot_requested" not in st.session_state:
     st.session_state.plot_requested = False
+if "average_mode" not in st.session_state:
+    st.session_state.average_mode = False
 
 # --- Get Git commit hash ---
 def get_git_commit():
@@ -33,7 +35,7 @@ def get_credentials():
     return ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, scope)
 
 # --- Load and preprocess data (cached) ---
-@st.cache_data(ttl=600)  # Auto-refresh every 10 minutes
+@st.cache_data(ttl=600)
 def load_data():
     load_data.timestamp = datetime.datetime.now()
     creds = get_credentials()
@@ -77,36 +79,48 @@ with col3:
 # --- Load data ---
 df = load_data()
 
-# --- UI: Mouse selector and plot trigger ---
+# --- UI: Mouse selector and average mode toggle ---
 with st.form("mouse_selection_form"):
-    st.title("🐭 Mouse Foraging Over Time")
+    st.title("🐭 Mouse Foraging Viewer")
     all_mice = sorted(df['Mouse ID'].unique())
     selected = st.multiselect("Select mice to display", all_mice, default=st.session_state.selected_mice)
-    plot_btn = st.form_submit_button("📊 Plot Graph")
+    average_mode = st.checkbox("📊 Show average per mouse (bar graph)", value=st.session_state.average_mode)
+    plot_btn = st.form_submit_button("📈 Plot Graph")
 
     if plot_btn:
         st.session_state.selected_mice = selected
+        st.session_state.average_mode = average_mode
         st.session_state.plot_requested = True
 
 # --- Plotting ---
 if st.session_state.plot_requested:
     selected_mice = st.session_state.selected_mice
+    average_mode = st.session_state.average_mode
+
     if selected_mice:
         fig, ax = plt.subplots(figsize=(10, 5))
-        color_map = plt.cm.get_cmap('tab10', len(all_mice))
+        if average_mode:
+            # --- Average Mode ---
+            avg_data = df[df['Mouse ID'].isin(selected_mice)].groupby("Mouse ID")["Total Foraged"].mean()
+            ax.bar(avg_data.index, avg_data.values, color="skyblue")
+            ax.set_title("Average Foraged per Mouse")
+            ax.set_xlabel("Mouse ID")
+            ax.set_ylabel("Avg. Total Foraged (g)")
+        else:
+            # --- Time Series Mode ---
+            color_map = plt.cm.get_cmap('tab10', len(all_mice))
+            for i, mouse in enumerate(all_mice):
+                if mouse in selected_mice:
+                    sub_df = df[df['Mouse ID'] == mouse]
+                    ax.plot(sub_df['Date'], sub_df['Total Foraged'],
+                            marker='o', linestyle='-', label=mouse, color=color_map(i))
 
-        for i, mouse in enumerate(all_mice):
-            if mouse in selected_mice:
-                sub_df = df[df['Mouse ID'] == mouse]
-                ax.plot(sub_df['Date'], sub_df['Total Foraged'],
-                        marker='o', linestyle='-', label=mouse, color=color_map(i))
-
-        ax.set_title("Foraging by Mouse")
-        ax.set_xlabel("Date")
-        ax.set_ylabel("Total Foraged (g)")
-        ax.tick_params(axis='x', rotation=45)
-        ax.grid(True)
-        ax.legend(title="Mouse ID", bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0)
+            ax.set_title("Foraging by Mouse Over Time")
+            ax.set_xlabel("Date")
+            ax.set_ylabel("Total Foraged (g)")
+            ax.tick_params(axis='x', rotation=45)
+            ax.grid(True)
+            ax.legend(title="Mouse ID", bbox_to_anchor=(1.02, 1), loc='upper left', borderaxespad=0)
 
         fig.tight_layout()
         st.pyplot(fig)
